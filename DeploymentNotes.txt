@@ -1,5 +1,7 @@
 
 
+Create a Resource Group with the name "netwovena365agentrg" in (US) WEST US 3
+
 
 West US 3
 
@@ -19,3 +21,11 @@ Enter a unique environment name: [Type ? for hint] NetwovenA365Agent
 Enter a value for the 'environmentName' infrastructure parameter: [Type ? for hint] NetwovenA365Agent
 
 >azd provision
+
+Make sure run all .ps1 files
+
+https://admin.cloud.microsoft/?source=applauncher#/agents/all/requested
+
+
+
+git remote add origin https://github.com/ravikadri/NetwovenA365Agent.git
