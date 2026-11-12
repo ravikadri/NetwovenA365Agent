@@ -1,0 +1,21 @@
+
+
+
+West US 3
+
+For AZ Resources
+az login --tenant <tenant-id>
+az login --tenant 47cda30f-47c4-4fb0-b5b7-10d5af6b831e
+
+
+For Application
+azd auth login --tenant-id <tenant-id>
+azd auth login --tenant-id 47cda30f-47c4-4fb0-b5b7-10d5af6b831e
+
+
+>azd provision --preview
+Enter a unique environment name: [Type ? for hint] NetwovenA365Agent
+
+Enter a value for the 'environmentName' infrastructure parameter: [Type ? for hint] NetwovenA365Agent
+
+>azd provision
