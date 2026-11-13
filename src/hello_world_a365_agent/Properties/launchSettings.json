@@ -10,7 +10,7 @@
         "ASPNETCORE_ENVIRONMENT": "Development",
         "MCP_PLATFORM_ENDPOINT": "https://agent365.svc.cloud.microsoft",
         "AzureOpenAIEndpoint": "https://vihannwacct.openai.azure.com/",
-        "ModelDeployment": "gpt-chat-latest"
+        "ModelDeployment": "gpt-5-mini"
       }
     },
     "https": {
@@ -22,7 +22,7 @@
         "ASPNETCORE_ENVIRONMENT": "Development",
         "MCP_PLATFORM_ENDPOINT": "https://agent365.svc.cloud.microsoft",
         "AzureOpenAIEndpoint": "https://vihannwacct.openai.azure.com/",
-        "ModelDeployment": "gpt-chat-latest"
+        "ModelDeployment": "gpt-5-mini"
       }
     }
   }

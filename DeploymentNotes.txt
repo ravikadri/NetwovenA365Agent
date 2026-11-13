@@ -22,9 +22,8 @@ Enter a value for the 'environmentName' infrastructure parameter: [Type ? for hi
 
 >azd provision
 
-Make sure run all .ps1 files when prompted. Press R
-\post-provision.ps1?
-\build-docker-image-acr.ps1
+Make sure run all .ps1 files when it is prompted. Press R
+
 
 https://admin.cloud.microsoft/?source=applauncher#/agents/all/requested
 
