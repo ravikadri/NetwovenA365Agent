@@ -20,47 +20,79 @@ public sealed class ResponsesApiAgentLogicServiceFactory(
 {
     private static readonly HttpClient HttpClient = new();
 
-    public async Task<IAgentLogicService> CreateAsync(AgentMetadata agent, ITurnContext turnContext, UserAuthorization userAuthorization)
-    {
-        // Local debugging: the agentic token exchange needs the blueprint managed identity,
-        // which only exists in the Foundry hosted container. Skip it and run without MCP tools.
 
-        // if (configuration.GetValue<bool>("LocalDevMode"))
-        // {
-        logger.LogWarning("LocalDevMode enabled: skipping agentic token acquisition and MCP tools.");
-        // return new ResponsesApiAgentLogicService(agent, configuration, logger, string.Empty, []);
+    public async Task<IAgentLogicService> CreateAsync(
+        AgentMetadata agent,
+        ITurnContext turnContext,
+        UserAuthorization userAuthorization)
+    {
+        // Local debugging: Skip agentic token acquisition.
+        logger.LogWarning(
+            "LocalDevMode enabled: skipping agentic token acquisition.");
+
+        const string audience =
+            "ea9ffc3e-8a23-4a7d-836d-234d7c7565c1";
 
         List<McpServerConfig> localServers =
-             [
-                new McpServerConfig
-                        {
-                        McpServerName = "microsoft_learn", Url = "https://learn.microsoft.com/api/mcp",
-                        // No Scope/Audience: public server, no token needed.
-                }
+        [
+            new McpServerConfig
+        {
+            McpServerName = "mcp_WordServer",
+            Url = "https://agent365.svc.cloud.microsoft/agents/servers/mcp_WordServer",
+            Scope = "McpServers.Word.All",
+            Audience = audience
+        },
+        new McpServerConfig
+        {
+            McpServerName = "mcp_MailTools",
+            Url = "https://agent365.svc.cloud.microsoft/agents/servers/mcp_MailTools",
+            Scope = "McpServers.Mail.All",
+            Audience = audience
+        },
+        new McpServerConfig
+        {
+            McpServerName = "mcp_ODSPRemoteServer",
+            Url = "https://agent365.svc.cloud.microsoft/agents/servers/mcp_ODSPRemoteServer",
+            Scope = "McpServers.OneDriveSharepoint.All",
+            Audience = audience
+        },
+        new McpServerConfig
+        {
+            McpServerName = "mcp_TeamsServer",
+            Url = "https://agent365.svc.cloud.microsoft/agents/servers/mcp_TeamsServer",
+            Scope = "McpServers.Teams.All",
+            Audience = audience
+        },
+        new McpServerConfig
+        {
+            McpServerName = "mcp_ExcelServer",
+            Url = "https://agent365.svc.cloud.microsoft/agents/servers/mcp_ExcelServer",
+            Scope = "McpServers.Excel.All",
+            Audience = audience
+        },
+        new McpServerConfig
+        {
+            McpServerName = "mcp_CalendarTools",
+            Url = "https://agent365.svc.cloud.microsoft/agents/servers/mcp_CalendarTools",
+            Scope = "McpServers.Calendar.All",
+            Audience = audience
+        },
+        new McpServerConfig
+        {
+            McpServerName = "microsoft_learn",
+            Url = "https://learn.microsoft.com/api/mcp"
+            // Public MCP server - no Scope or Audience.
+        }
         ];
 
-        return new ResponsesApiAgentLogicService(agent, configuration, logger, string.Empty, localServers);
-        //  }
-
-
-        //// Acquire token for MCP servers
-        //var requestContext = new TokenRequestContext(["ea9ffc3e-8a23-4a7d-836d-234d7c7565c1/.default"]);
-        //var tokenCredential = new AgentTokenCredential(tokenHelper, agent);
-        //var accessToken = await tokenCredential.GetTokenAsync(requestContext, CancellationToken.None);
-
-        //logger.LogInformation("Acquired token for Responses API MCP tools. Expires at: {Expiration}", accessToken.ExpiresOn);
-
-        //var mcpServers = await GetMcpServersAsync(agent.AgentId, accessToken.Token);
-
-        //IAgentLogicService service = new ResponsesApiAgentLogicService(
-        //    agent,
-        //    configuration,
-        //    logger,
-        //    accessToken.Token,
-        //    mcpServers);
-
-        //return service;
+        return new ResponsesApiAgentLogicService(
+            agent,
+            configuration,
+            logger,
+            string.Empty,
+            localServers);
     }
+
 
     private async Task<List<McpServerConfig>> GetMcpServersAsync(Guid agentInstanceId, string accessToken)
     {
