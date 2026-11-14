@@ -1,11 +1,11 @@
 namespace HelloWorldA365.AgentLogic;
 
+using AgentNotification;
 using HelloWorldA365.AgentLogic.ResponsesApi;
 using HelloWorldA365.Models;
+using Microsoft.Agents.A365.Notifications.Models;
 using Microsoft.Agents.Builder.App;
 using Microsoft.Agents.Core.Models;
-using AgentNotification;
-using Microsoft.Agents.A365.Notifications.Models;
 
 /// <summary>
 /// This is main handler for incoming activities, and is linked to Agent SDK infrastructure.
@@ -36,12 +36,12 @@ public class A365AgentApplication : AgentApplication
     private void ConfigureMessageHandling()
     {
         // Handle Email notifications using the AgentNotification extension
-        this.OnAgenticEmailNotification(async (turnContext, turnState, agentNotificationActivity, cancellationToken) =>
-        {
-            var agent = await GetAgentFromRecipient(turnContext.Activity);
-            var agentService = await _factory.CreateAsync(agent, turnContext, UserAuthorization);
-            await agentService.HandleEmailNotificationAsync(turnContext, turnState, agentNotificationActivity);
-        });
+        //this.OnAgenticEmailNotification(async (turnContext, turnState, agentNotificationActivity, cancellationToken) =>
+        //{
+        //    var agent = await GetAgentFromRecipient(turnContext.Activity);
+        //    var agentService = await _factory.CreateAsync(agent, turnContext, UserAuthorization);
+        //    await agentService.HandleEmailNotificationAsync(turnContext, turnState, agentNotificationActivity);
+        //});
 
         // Handle Word notifications
         this.OnAgenticWordNotification(async (turnContext, turnState, agentNotificationActivity, cancellationToken) =>
@@ -69,7 +69,7 @@ public class A365AgentApplication : AgentApplication
             // Use the specific comment notification handler for PowerPoint documents
             await agentService.HandleCommentNotificationAsync(turnContext, turnState, agentNotificationActivity);
         });
-        
+
         OnActivity(ActivityTypes.Message, async (turnContext, turnState, cancellationToken) =>
         {
             var streamingStarted = false;
@@ -166,15 +166,15 @@ public class A365AgentApplication : AgentApplication
 
             if (agent.IsMessagingEnabled)
             {
-				// Create AgentNotificationActivity for installation updates
-				var agentNotificationActivity = new AgentNotificationActivity(turnContext.Activity);
-				await agentService.HandleInstallationUpdateAsync(turnContext, turnState, agentNotificationActivity);
+                // Create AgentNotificationActivity for installation updates
+                var agentNotificationActivity = new AgentNotificationActivity(turnContext.Activity);
+                await agentService.HandleInstallationUpdateAsync(turnContext, turnState, agentNotificationActivity);
             }
             else
             {
                 await agentService.NewActivityReceived(turnContext, turnState, cancellationToken);
-			}
-		});
+            }
+        });
     }
 
     private async Task<AgentMetadata> GetAgentFromRecipient(IActivity activity)
@@ -182,7 +182,7 @@ public class A365AgentApplication : AgentApplication
         ChannelAccount recipient = activity.Recipient;
         ConversationAccount conversation = activity.Conversation;
 
-        if (recipient == null)  
+        if (recipient == null)
         {
             throw new ArgumentNullException(nameof(recipient), "Recipient cannot be null.");
         }
