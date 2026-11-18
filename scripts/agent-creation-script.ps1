@@ -72,6 +72,7 @@ $response | ConvertTo-Json -Depth 100 | Write-Host
 $agentVersion = $response.version
 $agentGuid = $response.agent_guid
 $agentDefaultInstanceClientId = $response.instance_identity.client_id
+$agentDefaultInstancePrincipalId = $response.instance_identity.principal_id
 $blueprintClientId = $response.blueprint.client_id
 Write-Host "Agent GUID: $agentGuid"
 Write-Host "Agent Version: $agentVersion"
@@ -103,6 +104,7 @@ if ($provisioningStatus -ne "active" -and $provisioningStatus -ne "failed") {
 
             # Refresh identity client ids once they are populated by provisioning.
             if ($pollResponse.instance_identity.client_id) { $agentDefaultInstanceClientId = $pollResponse.instance_identity.client_id }
+            if ($pollResponse.instance_identity.principal_id) { $agentDefaultInstancePrincipalId = $pollResponse.instance_identity.principal_id }
             if ($pollResponse.blueprint.client_id) { $blueprintClientId = $pollResponse.blueprint.client_id }
         } catch {
             Write-Host "Poll failed: $($_.Exception.Message)"
@@ -126,19 +128,52 @@ if ($provisioningStatus -ne "active") {
 $accountScope = "/subscriptions/$($env:SUBSCRIPTION_ID)/resourceGroups/$($env:RESOURCE_GROUP)/providers/Microsoft.CognitiveServices/accounts/$($env:ACCOUNT_NAME)"
 $cognitiveServicesUserRoleId = "a97b65f3-24c7-4388-baec-2e87135dc908"
 
-Write-Host "Granting Cognitive Services User role to client id $agentDefaultInstanceClientId on scope $accountScope"
+if (-not $agentDefaultInstanceClientId -and -not $agentDefaultInstancePrincipalId) {
+    throw "Agent version response did not include an instance identity (instance_identity.client_id / principal_id)."
+}
 
-$roleAssignmentOutput = az role assignment create `
-    --assignee $agentDefaultInstanceClientId `
-    --role $cognitiveServicesUserRoleId `
-    --scope $accountScope 2>&1 | Out-String
+# The instance identity is created by agent provisioning moments before this point, so it may not have
+# replicated in Microsoft Graph yet. `az role assignment create --assignee <appId>` does a Graph lookup and
+# fails with "Cannot find user or service principal in graph database". Assigning by object id with an explicit
+# principal type skips that lookup; we retry to ride out replication delay.
+$roleMaxRetries = 12
+$roleDelaySeconds = 15
 
-if ($LASTEXITCODE -eq 0) {
-    Write-Host "Cognitive Services User role assignment created."
-} elseif ($roleAssignmentOutput -match "RoleAssignmentExists") {
-    Write-Host "Cognitive Services User role assignment already exists, skipping."
-} else {
-    throw "Failed to create Cognitive Services User role assignment: $roleAssignmentOutput"
+if (-not $agentDefaultInstancePrincipalId) {
+    Write-Host "Resolving object id for instance identity client id $agentDefaultInstanceClientId ..."
+    for ($i = 1; $i -le $roleMaxRetries; $i++) {
+        $agentDefaultInstancePrincipalId = az ad sp list --filter "appId eq '$agentDefaultInstanceClientId'" --query "[0].id" -o tsv 2>$null
+        if ($LASTEXITCODE -eq 0 -and $agentDefaultInstancePrincipalId) { break }
+        $agentDefaultInstancePrincipalId = $null
+        Write-Host "Service principal not visible in Graph yet (attempt $i/$roleMaxRetries), waiting ${roleDelaySeconds}s..."
+        Start-Sleep -Seconds $roleDelaySeconds
+    }
+    if (-not $agentDefaultInstancePrincipalId) {
+        throw "Could not resolve the object id of the agent instance identity (client id $agentDefaultInstanceClientId) in Microsoft Graph."
+    }
+}
+
+Write-Host "Granting Cognitive Services User role to principal $agentDefaultInstancePrincipalId (client id $agentDefaultInstanceClientId) on scope $accountScope"
+
+for ($i = 1; $i -le $roleMaxRetries; $i++) {
+    $roleAssignmentOutput = az role assignment create `
+        --assignee-object-id $agentDefaultInstancePrincipalId `
+        --assignee-principal-type ServicePrincipal `
+        --role $cognitiveServicesUserRoleId `
+        --scope $accountScope 2>&1 | Out-String
+
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "Cognitive Services User role assignment created."
+        break
+    } elseif ($roleAssignmentOutput -match "RoleAssignmentExists") {
+        Write-Host "Cognitive Services User role assignment already exists, skipping."
+        break
+    } elseif ($i -lt $roleMaxRetries -and $roleAssignmentOutput -match "PrincipalNotFound|does not exist in the directory|Cannot find user or service principal") {
+        Write-Host "Principal not replicated yet (attempt $i/$roleMaxRetries), waiting ${roleDelaySeconds}s..."
+        Start-Sleep -Seconds $roleDelaySeconds
+    } else {
+        throw "Failed to create Cognitive Services User role assignment: $roleAssignmentOutput"
+    }
 }
 
 # Patch agent endpoint with activity protocol
