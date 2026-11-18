@@ -128,17 +128,48 @@ $cognitiveServicesUserRoleId = "a97b65f3-24c7-4388-baec-2e87135dc908"
 
 Write-Host "Granting Cognitive Services User role to client id $agentDefaultInstanceClientId on scope $accountScope"
 
-$roleAssignmentOutput = az role assignment create `
-    --assignee $agentDefaultInstanceClientId `
-    --role $cognitiveServicesUserRoleId `
-    --scope $accountScope 2>&1 | Out-String
+# The agent identity was just created, so Entra ID may not have replicated it yet.
+# Resolve its service principal object ID (retrying), then assign by object ID so
+# `az role assignment create` doesn't need its own Graph lookup.
+$maxAttempts = 12
+$retryDelaySeconds = 15
 
-if ($LASTEXITCODE -eq 0) {
-    Write-Host "Cognitive Services User role assignment created."
-} elseif ($roleAssignmentOutput -match "RoleAssignmentExists") {
-    Write-Host "Cognitive Services User role assignment already exists, skipping."
-} else {
-    throw "Failed to create Cognitive Services User role assignment: $roleAssignmentOutput"
+$agentDefaultInstancePrincipalId = $null
+for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+    $agentDefaultInstancePrincipalId = az rest --method get `
+        --url "https://graph.microsoft.com/v1.0/servicePrincipals(appId='$agentDefaultInstanceClientId')?`$select=id" `
+        --query id -o tsv 2>$null
+    if ($LASTEXITCODE -eq 0 -and $agentDefaultInstancePrincipalId) { break }
+    $agentDefaultInstancePrincipalId = $null
+    Write-Host "Service principal for client id $agentDefaultInstanceClientId not found in Entra ID yet (attempt $attempt/$maxAttempts), retrying in $retryDelaySeconds s..."
+    Start-Sleep -Seconds $retryDelaySeconds
+}
+
+if (-not $agentDefaultInstancePrincipalId) {
+    throw "Could not resolve the service principal object id for client id $agentDefaultInstanceClientId after $maxAttempts attempts."
+}
+
+Write-Host "Resolved service principal object id $agentDefaultInstancePrincipalId"
+
+for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+    $roleAssignmentOutput = az role assignment create `
+        --assignee-object-id $agentDefaultInstancePrincipalId `
+        --assignee-principal-type ServicePrincipal `
+        --role $cognitiveServicesUserRoleId `
+        --scope $accountScope 2>&1 | Out-String
+
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "Cognitive Services User role assignment created."
+        break
+    } elseif ($roleAssignmentOutput -match "RoleAssignmentExists") {
+        Write-Host "Cognitive Services User role assignment already exists, skipping."
+        break
+    } elseif ($attempt -eq $maxAttempts) {
+        throw "Failed to create Cognitive Services User role assignment: $roleAssignmentOutput"
+    }
+
+    Write-Host "Role assignment failed (attempt $attempt/$maxAttempts), retrying in $retryDelaySeconds s... $roleAssignmentOutput"
+    Start-Sleep -Seconds $retryDelaySeconds
 }
 
 # Patch agent endpoint with activity protocol
