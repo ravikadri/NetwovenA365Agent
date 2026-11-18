@@ -49,8 +49,39 @@ param modelVersion string = '2025-08-07'
 // Common parameters
 // =================================================================================================
 
-@description('Tags to apply to all resources')
+@description('Extra tags to apply to all resources. These override the required governance tags below if keys collide.')
 param tags object = {}
+
+// Governance tags required by Azure Policy on this subscription. Every resource gets them.
+// Override through azd env vars (TAG_*), mapped in main.parameters.json. Empty values use the defaults.
+
+@description('Value for the "Created By" tag. Defaults to the UPN (or object id) of the identity running the deployment.')
+param createdBy string = ''
+
+@description('Value for the "Created On" tag (yyyy-MM-dd). Defaults to the deployment date (UTC).')
+param createdOn string = ''
+
+@description('Value for the "Project Name" tag')
+param projectNameTag string = ''
+
+@description('Value for the "Estimated Monthly Cost (USD)" tag')
+param estimatedMonthlyCostUsd string = ''
+
+@description('Value for the "Required Till" tag (yyyy-MM-dd). Defaults to 90 days after the deployment date.')
+param requiredTill string = ''
+
+@description('Deployment timestamp. Do not set.')
+param deploymentTime string = utcNow('u')
+
+var requiredTags = {
+  'Created By': !empty(createdBy) ? createdBy : (!empty(deployer().userPrincipalName) ? deployer().userPrincipalName : deployer().objectId)
+  'Created On': !empty(createdOn) ? createdOn : dateTimeAdd(deploymentTime, 'PT0S', 'yyyy-MM-dd')
+  'Project Name': !empty(projectNameTag) ? projectNameTag : 'Netwoven A365 Agent'
+  'Estimated Monthly Cost (USD)': !empty(estimatedMonthlyCostUsd) ? estimatedMonthlyCostUsd : '100'
+  'Required Till': !empty(requiredTill) ? requiredTill : dateTimeAdd(deploymentTime, 'P90D', 'yyyy-MM-dd')
+}
+
+var allTags = union(requiredTags, tags)
 
 // =================================================================================================
 // Module deployments
@@ -64,7 +95,7 @@ module project 'modules/project.bicep' = {
     projectName: projectName
     containerRegistryName: containerRegistryName
     location: location
-    tags: tags
+    tags: allTags
     cognitiveServicesSku: cognitiveServicesSku
     containerRegistrySku: containerRegistrySku
     modelName: modelName
