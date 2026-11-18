@@ -50,6 +50,20 @@ Before deploying, you can customize:
 - **Agent instructions:** [AgentInstructions.cs](./src/hello_world_a365_agent/AgentLogic/AgentInstructions.cs)
 - **MCP tools:** [ToolManifest.json](./src/hello_world_a365_agent/ToolingManifest.json) - [Learn more](https://learn.microsoft.com/en-us/microsoft-agent-365/tooling-servers-overview)
 
+#### Resource Tags (Azure Policy)
+
+Every resource gets the tags `Created By`, `Created On`, `Project Name`, `Estimated Monthly Cost (USD)` and `Required Till`, which some subscription policies require. The defaults are: the deploying user, today's date, `Netwoven A365 Agent`, `100`, and 90 days from today. To override any of them, set these before `azd provision`:
+
+```powershell
+azd env set TAG_CREATED_BY "Your Name"
+azd env set TAG_CREATED_ON "2026-11-18"
+azd env set TAG_PROJECT_NAME "Netwoven A365 Agent"
+azd env set TAG_ESTIMATED_MONTHLY_COST "50"
+azd env set TAG_REQUIRED_TILL "2027-03-31"
+```
+
+Set `TAG_CREATED_ON` if you want that date to stay fixed when you provision again.
+
 #### Deploy
 
 ```powershell
