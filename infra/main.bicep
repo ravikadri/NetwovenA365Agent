@@ -49,8 +49,43 @@ param modelVersion string = '2025-08-07'
 // Common parameters
 // =================================================================================================
 
-@description('Tags to apply to all resources')
+// Tags required by the subscription's Azure Policy. Every resource in this template gets them.
+// azd fills these from env vars through main.parameters.json (see the readme).
+
+@minLength(1)
+@description('Value of the "Created By" tag, e.g. your name or email')
+param createdBy string
+
+@description('Value of the "Created On" tag (e.g. 2026-11-18). Leave empty to use today\'s UTC date.')
+param createdOn string = ''
+
+@minLength(1)
+@description('Value of the "Project Name" tag')
+param projectNameTag string
+
+@minLength(1)
+@description('Value of the "Estimated Monthly Cost (USD)" tag, e.g. 50')
+param estimatedMonthlyCost string
+
+@minLength(1)
+@description('Value of the "Required Till" tag, e.g. 2027-03-31')
+param requiredTill string
+
+@description('Used only as the "Created On" fallback when createdOn is empty. Do not set.')
+param deploymentDate string = utcNow('yyyy-MM-dd')
+
+@description('Extra tags to apply to all resources. These override the required tags on a name clash.')
 param tags object = {}
+
+var requiredTags = {
+  'Created By': createdBy
+  'Created On': empty(createdOn) ? deploymentDate : createdOn
+  'Project Name': projectNameTag
+  'Estimated Monthly Cost (USD)': estimatedMonthlyCost
+  'Required Till': requiredTill
+}
+
+var allTags = union(requiredTags, tags)
 
 // =================================================================================================
 // Module deployments
@@ -64,7 +99,7 @@ module project 'modules/project.bicep' = {
     projectName: projectName
     containerRegistryName: containerRegistryName
     location: location
-    tags: tags
+    tags: allTags
     cognitiveServicesSku: cognitiveServicesSku
     containerRegistrySku: containerRegistrySku
     modelName: modelName

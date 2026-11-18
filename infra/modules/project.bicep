@@ -101,6 +101,7 @@ resource cogServicesUserRoleAssignment 'Microsoft.Authorization/roleAssignments@
 resource modelDeployment 'Microsoft.CognitiveServices/accounts/deployments@2024-10-01' = {
   name: modelName
   parent: account
+  tags: tags
   sku: {
     name: 'GlobalStandard'
     capacity: 10
