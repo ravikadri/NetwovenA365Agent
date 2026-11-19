@@ -54,6 +54,44 @@ $headers = @{
     "Authorization" = "Bearer $aiAzureToken"
 }
 
+if (-not $AzureAIProjectEndpoint) {
+    throw "AZURE_AI_PROJECT_ENDPOINT is empty. Run 'azd env get-values' and check that provisioning produced the project endpoint output."
+}
+
+# A freshly provisioned Foundry project can take several minutes to become visible on the data plane.
+# Until then every call returns 404 {"code":"NotFound","message":"Project not found"}, which made the
+# postprovision hook fail right after `azd provision`. Wait for the project to answer before creating the agent.
+$projectReadyUrl = "$($AzureAIProjectEndpoint)/agents?api-version=2025-11-15-preview"
+$projectReadyMaxRetries = 30
+$projectReadyDelaySeconds = 20
+
+Write-Host "Waiting for Foundry project to become available at: $AzureAIProjectEndpoint"
+for ($i = 1; $i -le $projectReadyMaxRetries; $i++) {
+    try {
+        Invoke-RestMethod -Uri $projectReadyUrl -Method Get -Headers $headers -ErrorAction Stop | Out-Null
+        Write-Host "Foundry project is available."
+        break
+    } catch {
+        $statusCode = $null
+        if ($_.Exception.Response) { $statusCode = [int]$_.Exception.Response.StatusCode }
+        $details = if ($_.ErrorDetails.Message) { $_.ErrorDetails.Message } else { $_.Exception.Message }
+
+        if ($statusCode -eq 404 -and $i -lt $projectReadyMaxRetries) {
+            Write-Host "Project not available yet (attempt $i/$projectReadyMaxRetries), waiting ${projectReadyDelaySeconds}s..."
+            Start-Sleep -Seconds $projectReadyDelaySeconds
+            # The token is valid for ~1h, but refresh it in case the wait is long.
+            if ($i % 10 -eq 0) {
+                $aiAzureToken = az account get-access-token --resource https://ai.azure.com --query accessToken -o tsv
+                $headers["Authorization"] = "Bearer $aiAzureToken"
+            }
+        } elseif ($statusCode -eq 404) {
+            throw "Foundry project at '$AzureAIProjectEndpoint' is still not found after $projectReadyMaxRetries attempts. Check that 'az account show' is on tenant $($env:TENANT_ID) / subscription $($env:SUBSCRIPTION_ID), and that the project exists in the portal. Last error: $details"
+        } else {
+            throw "Failed to reach Foundry project at '$AzureAIProjectEndpoint' (HTTP $statusCode): $details"
+        }
+    }
+}
+
 Write-Host "Creating agent version at: $agentUrl"
 Write-Host "JSON Body:"
 Write-Host $jsonBody
