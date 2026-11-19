@@ -58,11 +58,64 @@ Write-Host "Creating agent version at: $agentUrl"
 Write-Host "JSON Body:"
 Write-Host $jsonBody
 
-$response = Invoke-RestMethod -Uri $agentUrl `
-    -Method Post `
-    -Headers $headers `
-    -Body $jsonBody `
-    -ErrorAction Stop
+# Pre-flight checks. A 404 "Project not found" from the data plane usually means one of:
+#   - the project was just created and the data plane hasn't caught up yet (retried below),
+#   - `az` is signed in to a different tenant/subscription than the one azd deployed to,
+#   - the azd env values are empty/stale (wrong folder or azd environment).
+foreach ($name in "AZURE_AI_PROJECT_ENDPOINT","AGENT_NAME","AZURE_CONTAINER_REGISTRY_ENDPOINT","SUBSCRIPTION_ID","RESOURCE_GROUP","ACCOUNT_NAME","PROJECT_NAME","TENANT_ID") {
+    if (-not [Environment]::GetEnvironmentVariable($name)) {
+        throw "Environment variable $name is empty. Run from the repo root via 'azd provision', or load 'azd env get-values' into the session first."
+    }
+}
+
+$azAccount = az account show --query "{tenantId:tenantId, subscriptionId:id}" -o json | ConvertFrom-Json
+Write-Host "az CLI context: tenant $($azAccount.tenantId), subscription $($azAccount.subscriptionId)"
+if ($azAccount.tenantId -ne $env:TENANT_ID) {
+    throw "az CLI is signed in to tenant $($azAccount.tenantId) but resources were deployed to tenant $($env:TENANT_ID). Run 'az login --tenant $($env:TENANT_ID)' and retry."
+}
+if ($azAccount.subscriptionId -ne $env:SUBSCRIPTION_ID) {
+    Write-Host "Switching az CLI subscription to $($env:SUBSCRIPTION_ID)"
+    az account set --subscription $env:SUBSCRIPTION_ID
+}
+
+$projectArmId = "/subscriptions/$($env:SUBSCRIPTION_ID)/resourceGroups/$($env:RESOURCE_GROUP)/providers/Microsoft.CognitiveServices/accounts/$($env:ACCOUNT_NAME)/projects/$($env:PROJECT_NAME)"
+$projectArm = az resource show --ids $projectArmId -o json 2>$null | ConvertFrom-Json
+if (-not $projectArm) {
+    throw "Foundry project not found in ARM at $projectArmId. Check that the azd environment matches the deployed resources."
+}
+$armEndpoint = $projectArm.properties.endpoints.'AI Foundry API'
+Write-Host "ARM project provisioningState: $($projectArm.properties.provisioningState), endpoint: $armEndpoint"
+if ($armEndpoint -and $armEndpoint.TrimEnd('/') -ne $AzureAIProjectEndpoint.TrimEnd('/')) {
+    Write-Host "WARNING: AZURE_AI_PROJECT_ENDPOINT ($AzureAIProjectEndpoint) differs from ARM endpoint ($armEndpoint). Using the ARM endpoint."
+    $AzureAIProjectEndpoint = $armEndpoint.TrimEnd('/')
+    $agentUrl = "$($AzureAIProjectEndpoint)/agents/$($AgentName)/versions?api-version=2025-11-15-preview"
+}
+
+# Newly created projects can return 404 "Project not found" on the data plane for several minutes.
+$createMaxRetries = 20
+$createDelaySeconds = 30
+for ($i = 1; $i -le $createMaxRetries; $i++) {
+    try {
+        $response = Invoke-RestMethod -Uri $agentUrl `
+            -Method Post `
+            -Headers $headers `
+            -Body $jsonBody `
+            -ErrorAction Stop
+        break
+    } catch {
+        $statusCode = $null
+        if ($_.Exception.Response) { $statusCode = [int]$_.Exception.Response.StatusCode }
+        $details = "$($_.ErrorDetails.Message)"
+        if ($i -lt $createMaxRetries -and $statusCode -eq 404 -and $details -match "Project not found") {
+            Write-Host "Project not yet available on the data plane (attempt $i/$createMaxRetries), waiting ${createDelaySeconds}s..."
+            Start-Sleep -Seconds $createDelaySeconds
+            # Tokens last ~60 min; refresh in case the wait is long.
+            $headers["Authorization"] = "Bearer $(az account get-access-token --resource https://ai.azure.com --query accessToken -o tsv)"
+        } else {
+            throw
+        }
+    }
+}
 
 Write-Host ""
 Write-Host "Response:"
