@@ -58,11 +58,37 @@ Write-Host "Creating agent version at: $agentUrl"
 Write-Host "JSON Body:"
 Write-Host $jsonBody
 
-$response = Invoke-RestMethod -Uri $agentUrl `
-    -Method Post `
-    -Headers $headers `
-    -Body $jsonBody `
-    -ErrorAction Stop
+# The deployer's Azure AI User role assignment is created by `azd provision` (infra/modules/project.bicep),
+# but data-plane RBAC can take several minutes to propagate. Retry on 403 instead of failing the hook.
+$createMaxRetries = 20
+$createDelaySeconds = 30
+for ($i = 1; $i -le $createMaxRetries; $i++) {
+    try {
+        $response = Invoke-RestMethod -Uri $agentUrl `
+            -Method Post `
+            -Headers $headers `
+            -Body $jsonBody `
+            -ErrorAction Stop
+        break
+    } catch {
+        $statusCode = $null
+        if ($_.Exception.Response) { $statusCode = [int]$_.Exception.Response.StatusCode }
+        if ($statusCode -eq 403 -and $i -lt $createMaxRetries) {
+            Write-Host "403 from Foundry project (role assignment still propagating?), attempt $i/$createMaxRetries, waiting ${createDelaySeconds}s..."
+            Start-Sleep -Seconds $createDelaySeconds
+            # Refresh the token so it reflects any newly propagated role assignments.
+            $aiAzureToken = az account get-access-token --resource https://ai.azure.com --query accessToken -o tsv
+            $headers["Authorization"] = "Bearer $aiAzureToken"
+            continue
+        }
+        if ($statusCode -eq 403) {
+            $me = az ad signed-in-user show --query id -o tsv 2>$null
+            Write-Host "Still 403 after $createMaxRetries attempts. Grant the 'Azure AI User' role on the Foundry account to the identity running this script (object id: $me):"
+            Write-Host "  az role assignment create --assignee-object-id <object-id> --assignee-principal-type User --role 'Azure AI User' --scope /subscriptions/$($env:SUBSCRIPTION_ID)/resourceGroups/$($env:RESOURCE_GROUP)/providers/Microsoft.CognitiveServices/accounts/$($env:ACCOUNT_NAME)"
+        }
+        throw
+    }
+}
 
 Write-Host ""
 Write-Host "Response:"

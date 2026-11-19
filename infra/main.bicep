@@ -70,6 +70,12 @@ param estimatedMonthlyCostUsd string = ''
 @description('Value for the "Required Till" tag (yyyy-MM-dd). Defaults to 90 days after the deployment date.')
 param requiredTill string = ''
 
+@description('Object id of the identity that runs the post-provision scripts (gets Azure AI User on the Foundry account). Defaults to the identity running the deployment.')
+param principalId string = ''
+
+@description('Principal type of principalId: User, ServicePrincipal or Group. Empty lets ARM resolve it.')
+param principalType string = ''
+
 @description('Deployment timestamp. Do not set.')
 param deploymentTime string = utcNow('u')
 
@@ -100,6 +106,8 @@ module project 'modules/project.bicep' = {
     containerRegistrySku: containerRegistrySku
     modelName: modelName
     modelVersion: modelVersion
+    deployerPrincipalId: !empty(principalId) ? principalId : deployer().objectId
+    deployerPrincipalType: principalType
   }
 }
 

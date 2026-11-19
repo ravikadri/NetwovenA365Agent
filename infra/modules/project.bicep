@@ -18,6 +18,12 @@ param publicNetworkAccess string = 'Enabled'
 param modelName string
 param modelVersion string
 
+@description('Object id of the identity that runs the post-provision scripts. It is granted Azure AI User on the account. Empty skips the assignment.')
+param deployerPrincipalId string = ''
+
+@description('Principal type of deployerPrincipalId (User, ServicePrincipal, Group). Empty lets ARM resolve it.')
+param deployerPrincipalType string = ''
+
 // Cognitive Services Account
 resource account 'Microsoft.CognitiveServices/accounts@2025-09-01' = {
   name: accountName
@@ -98,7 +104,24 @@ resource cogServicesUserRoleAssignment 'Microsoft.Authorization/roleAssignments@
 }
 
 
-resource modelDeployment 'Microsoft.CognitiveServices/accounts/deployments@2024-10-01' = {
+// Azure AI User: data-plane access to the Foundry account and its projects
+// (Microsoft.CognitiveServices/accounts/AIServices/agents/* and the other data actions).
+var azureAIUserRoleDefinitionId = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '53ca6127-db72-4b80-b1b0-d745d6d5456d')
+
+// Role assignment: grant Azure AI User to the identity that runs the deployment. The post-provision
+// scripts use that identity's `az` token to create the hosted agent version and publish it. Without this
+// role the agents API returns 403 "does not have permissions for .../agents/read actions".
+resource deployerAzureAIUserRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(deployerPrincipalId)) {
+  name: guid(account.id, deployerPrincipalId, azureAIUserRoleDefinitionId)
+  scope: account
+  properties: {
+    roleDefinitionId: azureAIUserRoleDefinitionId
+    principalId: deployerPrincipalId
+    principalType: empty(deployerPrincipalType) ? null : deployerPrincipalType
+  }
+}
+
+resource modelDeployment'Microsoft.CognitiveServices/accounts/deployments@2024-10-01' = {
   name: modelName
   parent: account
   tags: tags
